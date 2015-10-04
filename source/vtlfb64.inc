@@ -1,7 +1,7 @@
 ;-------------------------------------------------------------------------
 ;  Return of the Very Tiny Language
-;  version : 3.04  2010/06/11
-;  Copyright (C) 2002-2010 Jun Mizutani <mizutani.jun@nifty.ne.jp>
+;  version : 4.01  2015/09/25
+;  Copyright (C) 2002-2015 Jun Mizutani <mizutani.jun@nifty.ne.jp>
 ;
 ;  file : vtlfb64.inc
 ;         frame buffer extention
@@ -144,7 +144,7 @@ StartPoint:
 ; l[4] = x2     [rbp + 16]      ; l[5] = y2     [rbp + 20]
 ; l[6] = color  [rbp + 24]
 ; l[7] = ScrX   [rbp + 28]
-; l[8] = Depth  [rbp + 32]      ; 1ピクセルのバイト数
+; l[8] = Depth  [rbp + 32]      ; 1ピクセルのビット数
 ; l[9] = incr1  [rbp + 36]
 ; l[10]= incr2  [rbp + 40]
 
@@ -324,7 +324,7 @@ LineDraw:
 ;   d[3] = y      [rbp + 12] Y座標
 ;   d[4] = Color  [rbp + 16] 色
 ;   d[5] = ScrX   [rbp + 20] 転送先X方向のバイト数
-;   d[6] = Depth  [rbp + 24] 1ピクセルのバイト数
+;   d[6] = Depth  [rbp + 24] 1ピクセルのビット数
 Dot:
                 _PUSHA
                 xor     ebx, ebx
@@ -391,7 +391,7 @@ PatternSize:
 ;   p[6] = mem    [rbp + 24] p;3; パターンの格納アドレス ★
 ;   p[7] = mem    [rbp + 28]      パターンの格納アドレス ★
 ;   p[8] = ScrX   [rbp + 32] 転送先X方向のバイト数
-;   p[9] = Depth  [rbp + 36] 1ピクセルのバイト数
+;   p[9] = Depth  [rbp + 36] 1ピクセルのビット数
 
 PatternTransfer:
                 _PUSHA
@@ -430,7 +430,7 @@ PatternTransfer:
 ;   t[6] = mem    [rbp + 24] t;3; パターンの格納アドレス先頭 ★
 ;   t[7] = mem    [rbp + 28]      パターンの格納アドレス先頭 ★
 ;   t[8] = ScrX   [rbp + 32] 転送先のX方向のバイト数
-;   t[9] = Depth  [rbp + 36] 1ピクセルのバイト数
+;   t[9] = Depth  [rbp + 36] 1ピクセルのビット数
 ;   t[10] = x2    [rbp + 40] 転送元のX座標
 ;   t[11] = y2    [rbp + 44] 転送元のY座標
 ;   t[12]= ScrX2  [rbp + 48] 転送元のX方向のバイト数
@@ -498,7 +498,7 @@ PatternTransfer2:
 ;   q[6] = mem    [rbp + 24] q;3; パターンの格納アドレス ★
 ;   q[7] = mem    [rbp + 28]      パターンの格納アドレス ★
 ;   q[8] = ScrX   [rbp + 32] X方向のバイト数
-;   q[9] = Depth  [rbp + 36] 1ピクセルのバイト数
+;   q[9] = Depth  [rbp + 36] 1ピクセルのビット数
 ;   q[10] = Mask  [rbp + 40] マスク色
 MPatternTransfer:
                 _PUSHA
@@ -550,7 +550,7 @@ MPatternTransfer:
 ;   r[5] = PatH   [rbp + 20] パターンの高さ
 ;   r[6] = Color  [rbp + 24] パターンの色
 ;   r[7] = ScrX   [rbp + 28] X方向のバイト数
-;   r[8] = Depth  [rbp + 32] 1ピクセルのバイト数
+;   r[8] = Depth  [rbp + 32] 1ピクセルのビット数
 
 PatternFill:
                 _PUSHA
