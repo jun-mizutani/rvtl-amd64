@@ -1,6 +1,6 @@
-★  Return of Very Tiny Language (64bit) ver.4.01
+★  Return of Very Tiny Language (64bit) ver.4.01b
 
--  2015/10/05  Jun Mizutani
+-  2019/06/27  Jun Mizutani
 
 rvtl64 は Tiny Basic系のプログラミング環境です。アセンブラで作成している
 ため、10-30キロバイトほどの非常に小さいプログラムですが、対話的に操作
