@@ -1,8 +1,8 @@
 ;-------------------------------------------------------------------------
 ;  Return of the Very Tiny Language 64bit
 ;  file : rvtl.asm
-;  version : 4.01  2015/10/05
-;  Copyright (C) 2002-2015 Jun Mizutani <mizutani.jun@nifty.ne.jp>
+;  version : 4.02  2025/08/10
+;  Copyright (C) 2002-2025 Jun Mizutani <mizutani.jun@nifty.ne.jp>
 ;  RVTL may be copied under the terms of the GNU General Public License.
 ;
 ; build :
@@ -20,7 +20,7 @@
 DEFAULT REL
 
 %include        "vtllib64.inc"
-%include        "mt19937.inc"
+%include        "mt19937ar.inc"
 
 %define VTL_LABEL
 
@@ -3861,8 +3861,8 @@ section .data
   cginame       db   'wltvr', 0
 
 %ifndef SMALL_VTL
-start_msg       db   'RVTL64 v.4.01 2015/10/05'
-                db   ', Copyright 2002-2015 Jun Mizutani', 10,
+start_msg       db   'RVTL64 v.4.02 2025/08/10'
+                db   ', Copyright 2002-2025 Jun Mizutani', 10,
                 db   'RVTL64 may be copied under the terms of the GNU',
                 db   ' General Public License.', 10
 %ifdef DEBUG

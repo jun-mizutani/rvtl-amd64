@@ -1,12 +1,12 @@
 # Makefile for rvtl
-#     2010/07/03  Jun Mizutani
+#     2025/08/10  Jun Mizutani
 
 
 INSTALLDIR = /usr/bin/
 #INSTALLDIR = /bin/
 
 SOURCE = errno64.inc fb64.inc mman64.inc rvtl64.asm syscall64.inc \
-         vtlfb64.inc ext.inc fblib64.inc mt19937.inc signal64.inc \
+         vtlfb64.inc ext.inc fblib64.inc mt19937ar.inc signal64.inc \
          syserror64.inc vtllib64.inc
 
 all : rvtl64
