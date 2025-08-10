@@ -1,9 +1,9 @@
-★  Return of Very Tiny Language (64bit) ver.4.02
+★  Return of Very Tiny Language (64bit) for Amd64 ver.4.02
 
 -  2025/08/10  Jun Mizutani
 
 rvtl64 は Tiny Basic系のプログラミング環境です。アセンブラで作成している
-ため、10-30キロバイトほどの非常に小さいプログラムですが、対話的に操作
+ため、13-24キロバイトほどの非常に小さいプログラムですが、対話的に操作
 できる (REPL:read-eval-print loop) 豊富な機能を持っています。
 
 rvtl は特殊な文法 (基本的にすべて代入文) を持つ CASUAL や VTL の子孫と
@@ -94,7 +94,7 @@ VTL は処理系のプログラムサイズが 768バイトという非常に小
 このプログラムは rvtl でも実行して動作を確認することができます。
 
     $ rvtl64
-    RVTL64 v.4.02 2025/08/10, Copyright 2002-2025 Jun Mizutani
+    RVTL64 v.4.02 2025-08-10,(C)2002-2025 Jun Mizutani
     RVTL64 may be copied under the terms of the GNU General Public License.
     
     <12E2> 10 A=?
@@ -141,7 +141,6 @@ VTL は処理系のプログラムサイズが 768バイトという非常に小
 このように変数名が記号となっているシステム変数というアイデアによって、
 rvtl では色々な言語機能を実現しています。
 
-
 ■ rvtlの機能
 
 この rvtl64 は、32bit版 の rvtl と異なり64bitの命令で作成されているため、
@@ -170,7 +169,6 @@ rvtl64 は、歴史的な価値だけでなく、緊急時の限られた資源�
 として実行パーミッションを付加するとシェルスクリプトとして使うことも
 できます。
 
-
 ■ インストールとアンインストール
 
 rvtl64 を展開したディレクトリで ./rvtl64 と入力するだけで、共有ライブラリや
@@ -194,10 +192,19 @@ rvtl64 を rvtlw という名で起動すると、rvtlのプログラムが終�
 
 rvtl64 のアンインストールは単に rvtl64 を削除するだけです。
 
+■ 変更履歴
+● rvtl64 v.4.02の変更点
 
-■ rvtl v.3.05、rvtl64 v.4.01の変更点
+◆ RISC-V64版の追加
+rvtl-riscv64 にはフレームバッファ関連の命令はサポートしていません。
 
-● 64bit版(x86_64, Arm64) と 32bit版(x86, ARM) の違い
+◆ メルセンヌツイスターによる乱数生成の初期化処理の修正
+x86_64, Arm64 と RISC-V64ともに初期化処理を mt19937int.c (1999/10/28)
+から mt19937ar.c (2002/1/26) の方法に変更しました。
+
+● rvtl v.3.05、rvtl64 v.4.01の変更点
+
+◆ 64bit版(x86_64, Arm64) と 32bit版(x86, ARM) の違い
 
 64bit版(x86_64, Arm64) では、変数はすべて64bitとまでの数値が代入可能です。
 基本的に 32bit版(x86, ARM)  の rvtl に対して rvtl64 は上位互換です。
@@ -213,7 +220,7 @@ rvtl64 のアンインストールは単に rvtl64 を削除するだけです�
 フレームバッファを操作する命令 |fb? はアドレスとして64bitを渡す必要がある
 ため、引数の指定方法が変更(配列に64ビットの値を渡す部分)されています。
 
-● rvtl v.3.05、rvtl64 v.4.01 共通
+◆ rvtl v.3.05、rvtl64 v.4.0 共通
 以下の機能が追加されています。
 
    <A       Aの下位32bitを64bitにゼロ拡張する単項演算子 (32bit版では何もしない)
@@ -240,7 +247,6 @@ vtl ディレクトリ中のサンプルのマイナーなバグを修正しま�
    rvtl64 dns_(cpu).vtl  - 8.8.8.8 www.mztn.org
    rvtl64 wget_(cpu).vtl - 8.8.8.8 www.mztn.org /index.html
 
-
 ■ 簡単なプログラム
 
 rvtl64 は BASICのコマンドを記号で置き換えたような言語です。
@@ -251,7 +257,7 @@ rvtl64 は BASICのコマンドを記号で置き換えたような言語です�
 rvtlを起動すると次のように表示されます。
 
     $ rvtl64
-    RVTL64 v.4.02 2025/08/10, Copyright 2002-2025 Jun Mizutani
+    RVTL64 v.4.02 2025-08-10,(C)2002-2025 Jun Mizutani
     RVTL64 may be copied under the terms of the GNU General Public License.
     
     <040D>
@@ -363,7 +369,7 @@ GOSUBは間接モード専用ですが、その他のコマンドはどちらの
 おいて、実行権限をつけておくとシェルスクリプトやPerlのスクリプトの
 ように直接実行できます。
 
-    #!/usr/bin/rvtl
+    #!/usr/bin/rvtl64
     100 A=?
     110 B=?
     120 ?=A+B

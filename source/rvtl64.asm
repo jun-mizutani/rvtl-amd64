@@ -3861,8 +3861,8 @@ section .data
   cginame       db   'wltvr', 0
 
 %ifndef SMALL_VTL
-start_msg       db   'RVTL64 v.4.02 2025/08/10'
-                db   ', Copyright 2002-2025 Jun Mizutani', 10,
+start_msg       db   'RVTL64 v.4.02 2025-08-10'
+                db   ',(C)2002-2025 Jun Mizutani', 10,
                 db   'RVTL64 may be copied under the terms of the GNU',
                 db   ' General Public License.', 10
 %ifdef DEBUG
