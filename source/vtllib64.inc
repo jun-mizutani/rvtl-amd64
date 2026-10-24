@@ -588,6 +588,8 @@ FilenameCompletion:
                 mov     rbx, [rsp+8]        ; 入力バッファ追加位置(rsi)
                 mov     rcx, [rsp+16]       ; 入力バッファ先頭(rdi)
     .nextch2:
+                cmp     rbx, MAXLINE-1
+                jae     .full               ; 終端文字分を残す
                 mov     al, [rdi]           ; ファイル名をコピー
                 mov     [rcx+rbx], al       ; 入力バッファ
                 dec     rdx
@@ -605,7 +607,9 @@ FilenameCompletion:
                 add     rdi, rdx            ; 部分ファイル名長だけ進める
     .insert1:   mov     rbx, [rsp+8]        ; 入力バッファ追加位置(rsi)
                 mov     rcx, [rsp+16]       ; 入力バッファ先頭(rdi)
-    .nextch3:   mov     al, [rdi]           ; ファイル名をコピー
+    .nextch3:   cmp     rbx, MAXLINE-1
+                jae     .full               ; 終端文字分を残す
+                mov     al, [rdi]           ; ファイル名をコピー
                 mov     [rcx+rbx], al
                 or      al, al              ; 文字列末の0で終了
                 je      .done
@@ -613,6 +617,9 @@ FilenameCompletion:
                 inc     rdi
                 jmp     short .nextch3
 
+    .full:      mov     byte[rcx+MAXLINE-1], 0
+                mov     rbx, MAXLINE-1
+                jmp     short .done
     .done1:     xor     eax, eax
                 inc     rbx
                 mov     [rcx+rbx], al       ; 入力バッファ末に0を追加
@@ -724,23 +731,34 @@ GetFileStat:
                 _PUSHA
                 lea     rbx, [PathName]
                 lea     rdx, [rdi+18]       ; rdx = rdi+18
-                mov     ecx, MAXLINE
-                mov     rdi, rbx            ; PathName
                 lea     rax, [DirName]      ; ディレクトリ保存アドレス
-                mov     rsi, rax
                 call    StrLen
-                mov     rcx, rax
+                mov     r8, rax             ; ディレクトリ長
+                mov     rax, rdx            ; dirent.d_name
+                call    StrLen
+                mov     r9, rax             ; ファイル名長
+                add     rax, r8
+                jc      .too_long
+                cmp     rax, MAXLINE-1      ; NULを含めてPathName内か
+                ja      .too_long
+                lea     rdi, [PathName]
+                lea     rsi, [DirName]
+                mov     rcx, r8
                 rep     movsb               ; PathName += DirName
                 mov     rsi, rdx            ; dirent.d_name
-                mov     rax, rsi
-                call    StrLen
-                mov     rcx, rax
+                mov     rcx, r9
                 rep     movsb               ; PathName +=dirent.d_name
                 mov     byte[rdi], 0
+                mov     dword[file_stat+stat.st_mode], 0
+                mov     qword[file_stat+stat.st_size], 0
                 mov     eax, SYS_newlstat
                 mov     rdi, rbx            ; PathName
                 lea     rsi, [file_stat]
                 syscall
+                jmp     short .exit
+    .too_long:  mov     dword[file_stat+stat.st_mode], 0
+                mov     qword[file_stat+stat.st_size], 0
+    .exit:
                 _POPA
                 ret
 

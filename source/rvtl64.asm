@@ -1,8 +1,8 @@
 ;-------------------------------------------------------------------------
 ;  Return of the Very Tiny Language 64bit
 ;  file : rvtl.asm
-;  version : 4.02  2025/08/10
-;  Copyright (C) 2002-2025 Jun Mizutani <mizutani.jun@nifty.ne.jp>
+;  version : 4.03  2026-10-25
+;  Copyright (C) 2002-2026 Jun Mizutani <mizutani.jun@nifty.ne.jp>
 ;  RVTL may be copied under the terms of the GNU General Public License.
 ;
 ; build :
@@ -48,7 +48,7 @@ DEFAULT REL
 %assign         LSTACKMAX   127
 %assign         FNAMEMAX    256
 %assign         LABELMAX    1024
-%assign         VERSION     40000
+%assign         VERSION     40300
 %assign         VERSION64   1
 %assign         CPU         4
 
@@ -149,6 +149,12 @@ _start:
                 mov     [rbp+rcx*8], rdi
                 mov     eax, SYS_brk            ; brk
                 syscall
+                cmp     rax, rdi                ; 指定した末尾まで確保できたか
+                je      .heap_ready
+                call    RESTORE_TERMIOS
+                mov     eax, 1
+                jmp     ExitN
+    .heap_ready:
                 xor     eax, eax
                 dec     eax
                 mov     [rbx] ,eax              ; コード末マーク
@@ -537,29 +543,64 @@ SetVar:         ; 変数代入
 
     .array1:    call    .array
                 jb      .range_err          ; 範囲外をアクセス
-                mov     [rdi+rbx], al       ; 代入
+                test    rbx, rbx
+                js      .range_err          ; 負のインデックス
+                add     rdi, rbx
+                jc      .range_err          ; アドレス加算のオーバーフロー
+                mov     ecx, 1
+                call    RangeCheckSpan      ; 書き込み範囲をチェック
+                jb      .range_err
+                mov     [rdi], al           ; 代入
                 pop     rdi
                 ret
 
     .array2:    call    .array
                 jb      .range_err          ; 範囲外をアクセス
-                mov     [rdi+rbx*2], ax     ; 代入
+                test    rbx, rbx
+                js      .range_err          ; 負のインデックス
+                imul    rbx, rbx, 2
+                jo      .range_err          ; インデックス乗算のオーバーフロー
+                add     rdi, rbx
+                jc      .range_err          ; アドレス加算のオーバーフロー
+                mov     ecx, 2
+                call    RangeCheckSpan      ; 書き込み範囲をチェック
+                jb      .range_err
+                mov     [rdi], ax           ; 代入
                 pop     rdi
                 ret
 
     .array4:    call    .array
                 jb      .range_err          ; 範囲外をアクセス
-                mov     [rdi+rbx*4], eax    ; 代入
+                test    rbx, rbx
+                js      .range_err          ; 負のインデックス
+                imul    rbx, rbx, 4
+                jo      .range_err          ; インデックス乗算のオーバーフロー
+                add     rdi, rbx
+                jc      .range_err          ; アドレス加算のオーバーフロー
+                mov     ecx, 4
+                call    RangeCheckSpan      ; 書き込み範囲をチェック
+                jb      .range_err
+                mov     [rdi], eax          ; 代入
                 pop     rdi
                 ret
 
     .array8:    call    .array
                 jb      .range_err          ; 範囲外をアクセス
-                mov     [rdi+rbx*8], rax    ; 代入
+                test    rbx, rbx
+                js      .range_err          ; 負のインデックス
+                imul    rbx, rbx, 8
+                jo      .range_err          ; インデックス乗算のオーバーフロー
+                add     rdi, rbx
+                jc      .range_err          ; アドレス加算のオーバーフロー
+                mov     ecx, 8
+                call    RangeCheckSpan      ; 書き込み範囲をチェック
+                jb      .range_err
+                mov     [rdi], rax          ; 代入
                 pop     rdi
                 ret
 
     .range_err:
+                mov     rdi, [rsp]          ; 行先頭を復帰
                 call    RangeError          ; アクセス可能範囲を超えた
                 pop     rdi
                 ret
@@ -572,6 +613,7 @@ SetVar:         ; 変数代入
                 cmp     al, '"'
                 jne     .sp0
 
+                mov     r8, rdi             ; コピー先
                 xor     ecx, ecx            ; 即値文字列コピー
                 call    GetChar             ; skip "
     .next:      call    GetChar
@@ -579,13 +621,26 @@ SetVar:         ; 変数代入
                 je      .done
                 or      al, al
                 je      .done
-                mov     [rdi + rcx], al
+                cmp     ecx, FNAMEMAX-1
+                jae     .done               ; 終端文字分を残す
+                mov     r9, rcx
+                lea     rdi, [r8+r9]
+                mov     ecx, 1
+                call    RangeCheckSpan      ; 1文字の書き込み範囲
+                jb      .range_err
+                mov     rcx, r9
+                mov     [rdi], al
                 inc     ecx
-                cmp     ecx, FNAMEMAX
-                jb      .next
+                jmp     short .next
     .done:
+                mov     r9, rcx
+                lea     rdi, [r8+r9]
+                mov     ecx, 1
+                call    RangeCheckSpan      ; 文字列終端の書き込み範囲
+                jb      .range_err
+                mov     rcx, r9
                 xor     al, al
-                mov     [rdi + rcx], al
+                mov     [rdi], al
                 xor     ebx, ebx
                 mov     bl, '%'             ; %に文字数を保存
                 mov     [rbp+rbx*8], rcx
@@ -602,17 +657,31 @@ SetVar:         ; 変数代入
                 jb      .range_err          ; 範囲外をアクセス
                 push    rsi
                 mov     rsi, rax
-                xor     ecx, ecx
+                mov     r8, rdi             ; コピー先
+                xor     edx, edx            ; コピーした文字数
     .sp1:
-                mov     al, [rsi+rcx]
-                mov     [rdi+rcx], al
-                inc     rcx
-                cmp     rcx, 256*1024       ; 256KB
-                je      .sp2
+                mov     rdi, rsi
+                mov     ecx, 1
+                call    RangeCheckSpan      ; コピー元1バイト
+                jb      .sp_error
+                mov     al, [rsi]
+                mov     rdi, r8
+                mov     ecx, 1
+                call    RangeCheckSpan      ; コピー先1バイト
+                jb      .sp_error
+                mov     [r8], al
                 or      al, al
-                jne     .sp1
-    .sp2:
-                dec     rcx
+                je      .sp_done
+                inc     rsi
+                inc     r8
+                inc     rdx
+                cmp     rdx, 256*1024-1    ; 終端文字分を残す
+                jb      .sp1
+    .sp_error:
+                pop     rsi
+                jmp     .range_err
+    .sp_done:
+                mov     rcx, rdx
                 xor     ebx, ebx
                 mov     bl, '%'             ; %に文字数を保存
                 mov     [rbp+rbx*8], rcx
@@ -620,7 +689,20 @@ SetVar:         ; 変数代入
                 pop     rdi
                 ret
 
-    .sp3:       call    StrLen
+    .sp3:       mov     r8, rdi
+                xor     edx, edx
+    .sp3_loop:  mov     rdi, r8
+                add     rdi, rdx
+                mov     ecx, 1
+                call    RangeCheckSpan
+                jb      .range_err
+                cmp     byte[rdi], 0
+                je      .sp3_done
+                inc     rdx
+                cmp     rdx, 256*1024-1
+                jb      .sp3_loop
+                jmp     .range_err
+    .sp3_done:  mov     rax, rdx
                 xor     ebx, ebx
                 mov     bl, '%'             ; %に文字数を保存
                 mov     [rbp+rbx*8], rax
@@ -635,29 +717,61 @@ SetVar:         ; 変数代入
                 ret
 
 ;-------------------------------------------------------------------------
-; 配列のアクセス可能範囲をチェック
-; , < rdi < *
+; 1バイトのアクセス可能範囲をチェック
+; input2 またはプログラム領域 [',', '*') を許可
 ;-------------------------------------------------------------------------
 RangeCheck:
+                push    rcx
+                mov     ecx, 1
+                call    RangeCheckSpan
+                pop     rcx
+                ret
+
+; rdi から rcx バイトの範囲がアクセス可能かを確認する。
+; 戻り値は範囲内なら CF=0、範囲外なら CF=1。
+RangeCheckSpan:
                 push    rax
                 push    rbx
                 push    rcx
+                push    rdx
+                push    rdi
+                mov     rdx, rcx            ; 長さを退避
                 xor     ecx, ecx
                 mov     cl, '['             ; 範囲チェックフラグ
                 mov     rax, [rbp+rcx*8]
                 test    rax, rax
-                je      .exit               ; 0 ならチェックしない
-                lea     rax, [input2]
-                cmp     rdi, rax            ; if addr=input2
-                je      .exit               ; インプットバッファはOK
+                je      .ok                 ; 0 ならチェックしない
+                mov     rax, rdi
+                add     rax, rdx            ; 範囲終端(終端アドレスは含まない)
+                jc      .error              ; アドレス加算のオーバーフロー
+                lea     rbx, [input2]
+                cmp     rdi, rbx
+                jb      .heap_range
+                lea     rbx, [input2+MAXLINE]
+                cmp     rdi, rbx
+                ja      .heap_range
+                je      .input_end
+                cmp     rax, rbx
+                ja      .error              ; input2 の末尾を越える
+                jmp     short .ok
+    .input_end: test    rdx, rdx
+                jne     .heap_range         ; 終端からのアクセスは禁止
+                jmp     short .ok
+    .heap_range:
                 mov     cl, ','             ; プログラム先頭
-                mov     rax, [rbp+rcx*8]
-                mov     cl, '*'             ; RAM末
                 mov     rbx, [rbp+rcx*8]
-                cmp     rdi, rax            ; if = > addr, stc
-                jb      .exit
-                cmp     rbx, rdi            ; if * < addr, stc
-    .exit       pop     rcx
+                mov     cl, '*'             ; RAM末
+                mov     rcx, [rbp+rcx*8]
+                cmp     rdi, rbx            ; 開始位置がプログラム領域より前
+                jb      .error
+                cmp     rax, rcx            ; 終端位置がRAM末を越える
+                ja      .error
+    .ok:        clc
+                jmp     short .exit
+    .error:     stc
+    .exit:      pop     rdi
+                pop     rdx
+                pop     rcx
                 pop     rbx
                 pop     rax
                 ret
@@ -688,20 +802,29 @@ LineEdit:
                 mov     al, ' '
                 mov     [rsi], al
                 inc     rsi
+                lea     r8, [input+MAXLINE-1]
                 lea     rdi, [rdi + 8]
     .copy:      mov     al, [rdi]           ; 入力バッファにコピー
-                mov     [rsi], al
                 cmp     al, 0
                 je      .done
+                cmp     rsi, r8
+                jae     .too_long
+                mov     [rsi], al
                 inc     rsi
                 inc     rdi
                 jmp     short .copy
     .done:
+                mov     byte[rsi], 0
                 call    DispPrompt
                 mov     eax, MAXLINE        ; 1 行入力
                 lea     rbx, [input]
                 call    READ_LINE2
                 mov     rsi, rbx
+                jmp     short .exit
+    .too_long:  lea     rax, [error_edit_line_too_long]
+                call    OutAsciiZ
+                mov     byte[input], 0
+                mov     rsi, input
     .exit:
                 mov     r14b, 0             ; EOL=no, 入力済み
                 ret
@@ -771,7 +894,7 @@ List:
     .next:      mov     eax, [rdi]          ; オフセットは32bit
                 add     rdi, rax
                 call    NewLine
-                jmp     short .loop         ; 次行処理
+                jmp     .loop               ; 次行処理
 
     .exit:      mov     r14b, 1             ; 次に行入力 EOL=yes
                 ret
@@ -832,9 +955,31 @@ LineInsert:
                 mov     rdx, [rbp+rbx*8]
                 mov     rdi, rdx
                 add     rdi, rcx            ; 新ヒープ先頭計算
+                jc      .range_err          ; 新しい先頭計算のオーバーフロー
+                mov     r8, rax             ; 挿入位置
+                cmp     rdx, r8
+                jb      .range_err          ; 挿入位置が旧ヒープ末尾より後ろ
+                xor     ebx, ebx
+                mov     bl, '='
+                cmp     r8, [rbp+rbx*8]
+                jb      .range_err          ; 挿入位置がプログラム先頭より前
+                xor     ebx, ebx
+                mov     bl, '*'
+                mov     rax, [rbp+rbx*8]    ; RAM末
+                cmp     rdi, rax
+                ja      .range_err          ; RAM末を越える
+                mov     r9, rdi             ; 新しい末尾
+                mov     rcx, rdi
+                sub     rcx, r8             ; 変更されるメモリ範囲
+                mov     rdi, r8
+                call    RangeCheckSpan
+                jb      .range_err
+                mov     rdi, r9
+                xor     ebx, ebx
+                mov     bl, '&'
                 mov     [rbp+rbx*8], rdi    ; 新ヒープ先頭設定
                 mov     rsi, rdx            ; 元の &
-                sub     rdx, rax            ; 移動サイズ=元& - 挿入位置
+                sub     rdx, r8             ; 移動サイズ=元& - 挿入位置
                 dec     rsi                 ; 始めは old &-1 から
                 dec     rdi                 ; new &-1 へのコピー
                 mov     rcx, rdx
@@ -853,6 +998,12 @@ LineInsert:
                 sub     rcx, rax            ; 書き込みサイズ更新
             rep movsb
                 mov     r14b, 1             ; 次に行入力 EOL=yes
+                ret
+    .range_err:  pop     rcx
+                pop     rdi
+                pop     rsi
+                pop     rax
+                call    RangeError
                 ret
 
 ;-------------------------------------------------------------------------
@@ -1430,19 +1581,44 @@ Variable:
 
     .array1:    call    .array
                 jb      .range_err          ; 範囲外をアクセス
-                mov     bl, [rdi + rax]
+                test    rax, rax
+                js      .range_err          ; 負のインデックス
+                add     rdi, rax
+                jc      .range_err          ; アドレス加算のオーバーフロー
+                mov     ecx, 1
+                call    RangeCheckSpan      ; 読み込み範囲をチェック
+                jb      .range_err
+                mov     bl, [rdi]
                 call    GetChar             ; skip )
                 ret
 
     .array2:    call    .array
                 jb      .range_err          ; 範囲外をアクセス
-                mov     bx, [rdi + rax * 2]
+                test    rax, rax
+                js      .range_err          ; 負のインデックス
+                imul    rax, rax, 2
+                jo      .range_err          ; インデックス乗算のオーバーフロー
+                add     rdi, rax
+                jc      .range_err          ; アドレス加算のオーバーフロー
+                mov     ecx, 2
+                call    RangeCheckSpan      ; 読み込み範囲をチェック
+                jb      .range_err
+                mov     bx, [rdi]
                 call    GetChar             ; skip }
                 ret
 
     .array4:    call    .array
                 jb      .range_err          ; 範囲外をアクセス
-                mov     ebx, [rdi + rax * 4]
+                test    rax, rax
+                js      .range_err          ; 負のインデックス
+                imul    rax, rax, 4
+                jo      .range_err          ; インデックス乗算のオーバーフロー
+                add     rdi, rax
+                jc      .range_err          ; アドレス加算のオーバーフロー
+                mov     ecx, 4
+                call    RangeCheckSpan      ; 読み込み範囲をチェック
+                jb      .range_err
+                mov     ebx, [rdi]
                 movsx   rbx, ebx            ; 符号拡張
 ;                mov     ebx, ebx            ; ゼロ拡張
                 call    GetChar             ; skip ]
@@ -1450,7 +1626,16 @@ Variable:
 
     .array8:    call    .array
                 jb      .range_err          ; 範囲外をアクセス
-                mov     rbx, [rdi + rax * 8]
+                test    rax, rax
+                js      .range_err          ; 負のインデックス
+                imul    rax, rax, 8
+                jo      .range_err          ; インデックス乗算のオーバーフロー
+                add     rdi, rax
+                jc      .range_err          ; アドレス加算のオーバーフロー
+                mov     ecx, 8
+                call    RangeCheckSpan      ; 読み込み範囲をチェック
+                jb      .range_err
+                mov     rbx, [rdi]
                 call    GetChar             ; skip !
                 ret
 
@@ -1460,7 +1645,8 @@ Variable:
                 ret
 
     .range_err:
-                call    RangeError
+                lea     rax, [Range_msg]    ; rdiは検査対象のポインタ
+                call    OutAsciiZ
                 ret
 
 ;-------------------------------------------------------------------------
@@ -1800,21 +1986,26 @@ LoadCode:
                 mov     rsi, [rdi+16]       ; argvp 引数配列先頭
                 mov     rsi, [rsi+rcx*8]    ; 引数取得
                 mov     rdi, FileName
-                mov     ecx, FNAMEMAX
-    .next:      mov     al, [rsi]
-                mov     [rdi], al
+                xor     ecx, ecx
+    .next:      mov     al, [rsi+rcx]
                 or      al, al
                 je      .open
-                inc     rsi
-                inc     rdi
-                loop    .next
+                cmp     ecx, FNAMEMAX-1
+                jae     .too_long
+                mov     [rdi+rcx], al
+                inc     ecx
+                jmp     short .next
     .open:
+                mov     byte[rdi+rcx], 0
                 lea     rbx, [FileName]     ; ファイルオープン
                 call    fropen              ; open
                 jle     .exit
                 mov     [rbp-12], rax       ; FileDesc
                 mov     byte[rbp-4], 1      ; Read from file
                 mov     r14b, 1             ; EOL=yes
+                jmp     short .exit
+    .too_long:  mov     byte[FileName+FNAMEMAX-1], 0
+                mov     eax, -1             ; 長すぎる引数は開かない
     .exit:      pop     rsi
                 pop     rdi
                 pop     rcx
@@ -1824,27 +2015,53 @@ LoadCode:
 ; vtlファイル1行読み込み
 ;-------------------------------------------------------------------------
 READ_FILE:
-                mov     rsi, input
+                push    rbx
+                xor     ebx, ebx            ; 入力済みバイト数
                 mov     rdi, [rbp-12]       ; FileDesc
     .next:
+                lea     rsi, [input]
+                add     rsi, rbx
                 mov     eax, SYS_read       ; システムコール番号
                 mov     edx, 1              ; 読みこみバイト数
                 syscall                     ; ファイルから読みこみ
                 test    rax, rax
-                je      .end                ; EOF
+                je      .eof                ; EOF
+                js      .end                ; read error
                 cmp     byte[rsi], 10       ; LineFeed
-                je      .exit
-                inc     rsi
+                je      .line_end
+                cmp     ebx, MAXLINE-1
+                jae     .long_line          ; 終端文字の領域がない
+                inc     ebx
                 jmp     short .next
+    .eof:       test    ebx, ebx
+                jnz     .line_end           ; 改行なしの最終行
     .end:                                   ; ファイル末の場合
                 mov     rbx, [rbp-12]       ; FileDesc
                 call    fclose              ; File Close
                 mov     byte[rbp-4], 0      ; Read from console
                 call    LoadCode            ; 次のファイルをオープン
                 jmp     short .skip
-    .exit:      mov     r14b, 0             ; EOL=no
-    .skip:      mov     byte [rsi], 0
-                mov     rsi, input
+    .long_line:
+                lea     rsi, [input+MAXLINE-1]
+    .drain:     mov     eax, SYS_read
+                mov     edx, 1
+                syscall
+                test    rax, rax
+                jle     .long_done
+                cmp     byte[rsi], 10
+                jne     .drain
+    .long_done:
+                mov     byte[input], 0      ; 長い行は実行せず破棄
+                lea     rax, [error_line_too_long]
+                call    OutAsciiZ
+                mov     r14b, 0             ; EOL=no
+                jmp     short .skip
+    .line_end:  mov     r14b, 0             ; EOL=no
+                lea     rdi, [input]
+                add     rdi, rbx
+                mov     byte[rdi], 0
+    .skip:      mov     rsi, input
+                pop     rbx
                 ret
 
 ;-------------------------------------------------------------------------
@@ -1970,8 +2187,25 @@ Com_OutChar:    call    GetChar             ; get next
     .char4:     call    SkipEqualExp        ; ４バイト文字
                 call    OutChar8B
                 ret
-    .char5:     call    SkipEqualExp
+    .char5:     push    rdi                 ; 実行中の行ポインタを保存
+                call    SkipEqualExp
+                mov     r8, rax            ; 文字列先頭
+                xor     edx, edx            ; 出力文字数
+    .str_loop:  mov     rdi, r8
+                add     rdi, rdx
+                mov     ecx, 1
+                call    RangeCheckSpan      ; 読み込み範囲をチェック
+                jb      .str_error
+                mov     al, [rdi]
+                test    al, al
+                je      .str_exit
+                call    OutChar
+                inc     rdx
+                cmp     rdx, 256*1024-1
+                jb      .str_loop
+    .str_error: lea     rax, [Range_msg]
                 call    OutAsciiZ
+    .str_exit:  pop     rdi                 ; 実行中の行ポインタを復帰
                 ret
 
 ;-------------------------------------------------------------------------
@@ -2477,12 +2711,21 @@ Com_BRK:
                 call    SkipEqualExp        ; = を読み飛ばした後 式の評価
                 mov     rdx, rdi            ; rdi 退避
                 mov     rdi, rax            ; rbx にメモリサイズ
+                xor     ebx, ebx
+                mov     bl, '&'
+                cmp     rdi, [rbp+rbx*8]    ; プログラム末尾より前へは縮小しない
+                jb      .range_err
                 mov     eax, SYS_brk        ; メモリ確保
                 syscall
+                cmp     rax, rdi            ; brk が要求値を受け付けたか
+                jne     .range_err
                 mov     rdi, rdx            ; rdi 復帰
                 xor     ebx, ebx
                 mov     bl, '*'             ; ヒープ先頭
                 mov     [rbp+rbx*8], rax
+                ret
+    .range_err: mov     rdi, rdx
+                call    RangeError
                 ret
 
 ;-------------------------------------------------------------------------
@@ -2507,10 +2750,11 @@ GetString:
                 je      .exit
                 or      al, al
                 je      .exit
+                cmp     ecx, FNAMEMAX-1
+                jae     .exit               ; 終端文字分を残す
                 mov     [rdi + rcx], al
                 inc     ecx
-                cmp     ecx, FNAMEMAX
-                jb      .next
+                jmp     short .next
     .exit:
                 xor     al, al
                 mov     [rdi + rcx], al
@@ -2525,44 +2769,82 @@ Com_CdWrite:
                 push    rsi
                 call    GetFileName
                 call    fwopen              ; open
-                je      .exit
                 js      .error
                 mov     [rbp-20], rax       ; FileDescW
                 xor     ebx, ebx
                 mov     bl, '='
                 mov     rdi, [rbp+rbx*8]    ; コード先頭アドレス
-    .loop:      mov     rsi, input2         ; ワークエリア(行)
-                mov     eax, [rdi]          ; 次行へのオフセット
+    .loop:      mov     r9, rdi             ; 現在の行
+                xor     ebx, ebx
+                mov     bl, '='
+                cmp     r9, [rbp+rbx*8]
+                jb      .bad                ; 行ポインタがプログラムより前
+                xor     ebx, ebx
+                mov     bl, '&'
+                mov     r8, [rbp+rbx*8]     ; プログラム末尾
+                cmp     r9, r8
+                jae     .bad                ; 行ヘッダーがプログラム末尾以降
+                mov     rdi, r9
+                mov     ecx, 8
+                call    RangeCheckSpan      ; 行ヘッダー全体を確認
+                jb      .bad
+                mov     eax, [r9]           ; 次行へのオフセット
                 inc     eax                 ; コード最終か?
                 je      .exit               ; 最終なら終了
-                mov     eax, [rdi+4]        ; 行番号取得
-                call    PutDecimal          ; 行番号書き込み
-                mov     al, ' '             ; スペース書込み
-                mov     [rsi], al           ; Write One Char
+                mov     r10d, [r9]           ; 次行へのオフセット
+                cmp     r10, 8
+                jb      .bad
+                sub     r8, r9              ; 残りのプログラム領域
+                cmp     r10, r8
+                jae     .bad                ; 次行マーカーも領域内に必要
+                mov     rdi, r9
+                mov     rcx, r10
+                call    RangeCheckSpan      ; 行レコード全体を確認
+                jb      .bad
+
+                lea     rsi, [r9+8]         ; コード文字列
+                lea     rax, [r10-8]        ; 終端までの最大長
+                xor     edx, edx
+    .code_len:  cmp     rdx, rax
+                jae     .bad
+                cmp     byte[rsi+rdx], 0
+                je      .prefix
+                inc     rdx
+                jmp     short .code_len
+    .prefix:    push    rdx                 ; コード長を保存
+                mov     rsi, input2
+                mov     eax, [r9+4]         ; 行番号
+                call    PutDecimal
+                mov     byte[rsi], ' '
                 inc     rsi
-                mov     ebx, 8
-    .code:      mov     al, [rdi + rbx]     ; コード部分表示
-                cmp     al, 0               ; 行末か?
-                je      .next               ; file出力後次行
-                mov     [rsi], al           ; Write One Char
-                inc     rsi
-                inc     rbx
-                jmp     short .code
-    .next:      mov     ecx, [rdi]          ; 次行へのオフセット
-                add     rdi, rcx            ; 次行先頭へ
-                mov     byte[rsi], 10       ; 改行書込み
-                inc     rsi
-                mov     byte[rsi], 0        ; EOL
-                push    rdi                 ; 次行先頭保存
-                mov     rsi, input2         ; バッファアドレス
-                mov     rax, rsi
-                call    StrLen
-                mov     rdx, rax            ; 書きこみバイト数
+                mov     rdx, rsi
+                sub     rdx, input2         ; 行番号と空白の長さ
+                mov     rsi, input2
                 mov     rdi, [rbp-20]       ; FileDescW
                 mov     eax, SYS_write
                 syscall
-                pop     rdi                 ; 次行先頭復帰
-                jmp     short .loop         ; 次行処理
+                pop     rdx                 ; コード長
+                lea     rsi, [r9+8]
+                mov     rdi, [rbp-20]
+                mov     eax, SYS_write
+                syscall
+                mov     byte[input2], 10    ; 改行を1バイトで書き込む
+                lea     rsi, [input2]
+                mov     edx, 1
+                mov     rdi, [rbp-20]
+                mov     eax, SYS_write
+                syscall
+                mov     rdi, r9
+                add     rdi, r10            ; 次行先頭
+                jmp     .loop               ; 次行処理
+    .bad:       lea     rax, [Range_msg]
+                call    OutAsciiZ
+                mov     rbx, [rbp-20]
+                call    fclose
+                mov     r14b, 1
+                pop     rsi
+                pop     rdi
+                ret
     .exit:
                 mov     rbx, [rbp-20]       ; FileDescW
                 call    fclose
@@ -2638,7 +2920,6 @@ Com_FileWrite:
                 jmp     short .L2
     .L1:        call    GetFileName
     .L2:        call    fwopen              ; open
-                je      .exit
                 js      SYS_Error
                 mov     [rbp-20], rax       ; FileDescW
 
@@ -2650,12 +2931,24 @@ Com_FileWrite:
                 mov     al, '}'             ; 格納領域最終
                 mov     rax, [rbp+rax*8]    ;
                 cmp     rax, rsi
-                jb      .exit0
+                jb      .range_err
                 sub     rax, rsi
-                mov     rdx, rax            ; 書き込みサイズ
+                mov     rcx, rax            ; 書き込みサイズ
+                mov     rdi, rsi
+                call    RangeCheckSpan      ; 書き込み範囲をチェック
+                jb      .range_err
+                mov     rdx, rcx
                 mov     eax, SYS_write      ; システムコール番号
                 mov     rdi, [rbp-20]       ; FileDescW
                 syscall
+                push    rax
+                mov     rbx, [rbp-20]       ; FileDescW
+                call    fclose
+                pop     rax
+                jmp     .exit0
+    .range_err: mov     rdi, [rsp]          ; 呼び出し元の行先頭
+                call    RangeError
+                mov     rbx, [rbp-20]       ; FileDescW
                 call    fclose
     .exit0:     pop     rdi
                 pop     rsi
@@ -2677,7 +2970,6 @@ Com_FileRead:
                 jmp     short .L2
     .L1:        call    GetFileName
     .L2:        call    fropen              ; open
-                je      .exit
                 js      near SYS_Error
                 mov     [rbp-20], rax       ; FileDescW
 
@@ -2688,6 +2980,8 @@ Com_FileRead:
                 xor     esi, esi            ; 第２引数 : offset = 0
                 mov     edx, SEEK_END       ; 第３引数 : origin
                 syscall                     ; ファイルサイズを取得
+                test    rax, rax
+                js      .seek_error
 
                 push    rax                 ; file_size 退避
                 mov     rdi, [rbp-20]       ; 第１引数 : fd
@@ -2695,31 +2989,62 @@ Com_FileRead:
                 xor     esi, esi            ; 第２引数 : offset=0
                 xor     edx, edx            ; 第３引数 : origin=0
                 syscall                     ; ファイル先頭にシーク
+                test    rax, rax
+                js      .seek_error_pop
 
                 xor     eax, eax
                 mov     al, '{'             ; 格納領域先頭
                 mov     rsi, [rbp+rax*8]    ; バッファ指定
                 pop     rdx                 ; file_size 取得
+                mov     rdi, rsi
+                mov     rcx, rdx
+                call    RangeCheckSpan      ; 読み込み範囲をチェック
+                jb      .range_err
+                mov     rax, rsi
+                add     rax, rdx
+                jc      .range_err
+                mov     r8, rax             ; 読み込み終端
+                xor     eax, eax
                 mov     al, ')'             ; 読み込みサイズ設定
                 mov     [rbp+rax*8], rdx
-                mov     rbx, rsi
-                add     rbx, rdx
+                xor     eax, eax
                 mov     al, '}'             ; 格納領域最終設定
-                mov     [rbp+rax*8], rbx    ;
-                mov     al, '*'
-                mov     rax, [rbp+rax*8]    ; RAM末
-                cmp     rax, rbx
-                jl      .exit0              ; 領域不足
+                mov     [rbp+rax*8], r8     ; 読み込み終端
 
                 mov     eax, SYS_read       ; システムコール番号
                 mov     rdi, [rbp-20]       ; FileDescW
+                mov     rcx, rdx            ; サイズをsyscall後も保持
                 syscall                     ; ファイル全体を読みこみ
+                test    rax, rax
+                js      .read_error
                 push    rax
                 mov     rbx, [rbp-20]       ; FileDescW
                 call    fclose
                 pop     rax
-
-                test    rax,rax             ; エラーチェック
+                jmp     .exit0
+    .range_err: mov     rdi, [rsp]          ; 呼び出し元の行先頭
+                call    RangeError
+                mov     rbx, [rbp-20]       ; FileDescW
+                call    fclose
+                jmp     .exit0
+    .seek_error_pop:
+                add     rsp, 8              ; file_size を捨てる
+    .seek_error:
+                push    rax
+                mov     rbx, [rbp-20]
+                call    fclose
+                pop     rax
+                pop     rdi
+                pop     rsi
+                jmp     near SYS_Error
+    .read_error:
+                push    rax
+                mov     rbx, [rbp-20]
+                call    fclose
+                pop     rax
+                pop     rdi
+                pop     rsi
+                jmp     near SYS_Error
     .exit0:     pop     rdi
                 pop     rsi
     .exit       ret
@@ -2731,7 +3056,8 @@ Com_FileTop:
                 call    SkipEqualExp        ; = を読み飛ばした後 式の評価
                 push    rdi
                 mov     rdi, rax
-                call    RangeCheck          ; 範囲チェック
+                xor     ecx, ecx            ; 境界アドレスなので長さ0
+                call    RangeCheckSpan      ; 範囲チェック
                 pop     rdi
                 jb      Com_FileEnd.range_err   ; 範囲外をアクセス
                 xor     ebx, ebx
@@ -2746,7 +3072,8 @@ Com_FileEnd:
                 call    SkipEqualExp        ; = を読み飛ばした後 式の評価
                 push    rdi
                 mov     rdi, rax
-                call    RangeCheck          ; 範囲チェック
+                xor     ecx, ecx            ; 終端境界なので長さ0
+                call    RangeCheckSpan      ; 範囲チェック
                 pop     rdi
                 jb      .range_err          ; 範囲外をアクセス
                 xor     ebx, ebx
@@ -3179,6 +3506,17 @@ def_func_l:
                 je      .empty
 
                 call    StrLen              ; 引数をDirNameにコピー
+                test    rax, rax
+                je      .empty
+                cmp     byte[rsi+rax-1], '/'
+                je      .path_has_slash
+                cmp     rax, MAXLINE-2      ; 末尾の/とNULを格納
+                ja      .path_too_long
+                jmp     short .path_copy
+    .path_has_slash:
+                cmp     rax, MAXLINE-1      ; 末尾のNULを格納
+                ja      .path_too_long
+    .path_copy:
                 mov     rcx, rax            ; 文字列長をrcx
                 rep     movsb
                 cmp     byte[rdi-1], '/'
@@ -3189,6 +3527,12 @@ def_func_l:
                 jmp     short .list
 
     .empty:     lea     rbx, [current_dir]  ; 指定なしなら ./
+                jmp     short .list
+    .path_too_long:
+                lea     rax, [error_path_too_long]
+                call    OutAsciiZ
+                _POPA
+                ret
     .list:      call    fropen
                 js      .exit0
                 mov     rbx, rax            ; fd
@@ -3548,7 +3892,18 @@ IsHexNum:       call    IsHex               ; 16進文字？
 URL_Decode:
                 _PUSHA
                 mov     rsi, rax
-                mov     rdi, rcx
+                mov     r8, rcx             ; デコード先
+                mov     rdi, rsi
+                mov     rcx, rbx
+                call    RangeCheckSpan      ; エンコード元の全範囲
+                jb      .range_error
+                mov     rdi, r8
+                mov     rcx, rbx
+                add     rcx, 1              ; 終端文字分を含む
+                jc      .range_error
+                call    RangeCheckSpan      ; デコード先の最大範囲
+                jb      .range_error
+                mov     rdi, r8
                 xor     eax, eax
                 xor     ecx, ecx
                 push    rsi
@@ -3566,19 +3921,33 @@ URL_Decode:
                 jmp     .urld4
 
     .urld3:
+                mov     rdx, [rsp]          ; エンコード元先頭
+                mov     rax, rsi
+                sub     rax, rdx            ; % の位置
+                mov     rdx, rbx
+                sub     rdx, rax            ; 残りバイト数
+                cmp     rdx, 3
+                jb      .urld3_short        ; 不完全な %xx は % のまま
+                mov     r10, rsi            ; 不正な %xx は%だけ消費
                 xor     edx, edx
                 inc     rsi
                 mov     al, [rsi]
                 call    IsHexNum
-                jb      .urld4
+                jb      .urld3_bad
                 add     dl, al
                 inc     rsi
                 mov     al, [rsi]
                 call    IsHexNum
-                jb      .urld4
+                jb      .urld3_bad
                 shl     dl, 4
                 add     dl, al
                 mov     [rdi + rcx], dl
+                jmp     short .urld4
+    .urld3_short:
+                mov     byte[rdi+rcx], '%'
+                jmp     short .urld4
+    .urld3_bad: mov     rsi, r10
+                mov     byte[rdi+rcx], '%'
     .urld4:
                 inc     rsi
                 inc     rcx
@@ -3591,6 +3960,10 @@ URL_Decode:
                 xor     eax, eax
                 mov     [rdi + rcx], al
                 mov     [rsp+48], rcx       ; rax に文字数を返す
+                _POPA
+                ret
+    .range_error:
+                mov     qword[rsp+48], 0    ; 失敗時は長さ0
                 _POPA
                 ret
 
@@ -3610,6 +3983,7 @@ FuncBegin:
                 jb      .range_err          ; 範囲外をアクセス
 
                 call    GetString2          ; FileNameにコピー
+                jc      .range_err          ; 長さまたは読み込み範囲が不正
                 jmp     short .parse
     .line:      cmp     byte[rsi], '"'      ; コード行から
                 jne     .get
@@ -3629,14 +4003,25 @@ FuncBegin:
                 push    rdi
                 mov     rbx, rax
                 xor     ecx, ecx
-                lea     rdi, [FileName]
-    .next:      mov     al, [rbx + rcx]
-                mov     [rdi + rcx], al
+                lea     r8, [FileName]
+    .next:      push    rcx
+                lea     rdi, [rbx+rcx]
+                mov     ecx, 1
+                call    RangeCheckSpan      ; コピー元1バイト
+                pop     rcx
+                jb      .invalid
+                mov     al, [rbx + rcx]
+                mov     [r8 + rcx], al
                 or      al, al
-                je      .exit
+                je      .valid
+                cmp     rcx, FNAMEMAX-1
+                jae     .invalid
                 inc     rcx
-                cmp     rcx, FNAMEMAX
-                jb      .next
+                jmp     short .next
+    .invalid:   mov     byte[r8+FNAMEMAX-1], 0
+                stc
+                jmp     short .exit
+    .valid:     clc
     .exit:      pop     rdi
                 ret
 
@@ -3861,8 +4246,8 @@ section .data
   cginame       db   'wltvr', 0
 
 %ifndef SMALL_VTL
-start_msg       db   'RVTL64 v.4.02 2025-08-10'
-                db   ',(C)2002-2025 Jun Mizutani', 10,
+start_msg       db   'RVTL64 v.4.03 2026-10-25'
+                db   ',(C)2002-2026 Jun Mizutani', 10,
                 db   'RVTL64 may be copied under the terms of the GNU',
                 db   ' General Public License.', 10
 %ifdef DEBUG
@@ -3889,6 +4274,9 @@ err_exp         db   10,'Error in Expression at line ',0
 err_label       db   10,'Label not found!',10,0
 err_vstack      db   10,'Empty stack!',10,0
 error_cdread    db   10,'Code Read (>=) is not allowed!',10,0
+error_line_too_long db 10,'Code line too long; discarded.',10,0
+error_path_too_long db 10,'Path name too long.',10,0
+error_edit_line_too_long db 10,'Line is too long to edit.',10,0
 no_direct_mode  db   10,"Direct mode is not allowed!", 10,0
 
                 align 4

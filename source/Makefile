@@ -1,5 +1,5 @@
 # Makefile for rvtl
-#     2025/08/10  Jun Mizutani
+#     2026/10/25  Jun Mizutani
 
 
 INSTALLDIR = /usr/bin/
